@@ -1,0 +1,32 @@
+name: Autograding Tests
+'on':
+- push
+- repository_dispatch
+permissions:
+  checks: write
+  actions: read
+  contents: read
+jobs:
+  run-autograding-tests:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-classroom[bot]'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Setup python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'  
+    - name: Rank with python
+      id: rank-with-python
+      timeout-minutes: 10
+      run: |
+        python solver_test.py
+        echo "result=$(jq -c . results.json | jq -sRr @base64)" >> "$GITHUB_OUTPUT"
+    
+    - name: Autograding Reporter
+      uses: classroom-resources/autograding-grading-reporter@v1
+      env:
+        RANK-WITH-PYTHON_RESULTS: "${{steps.rank-with-python.outputs.result}}"
+      with:
+        runners: rank-with-python
