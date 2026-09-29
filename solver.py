@@ -1,6 +1,7 @@
 import sys
+import random
 from threading import Event
-from utils import SATSolverResult, load_formula, lit_to_dimacs
+from utils import SATSolverResult, load_formula, lit_to_dimacs, neg
 
 
 class Solver:
@@ -108,19 +109,137 @@ class Solver:
         UnitPropagate: распространить литералы trail[propagated:].
         Возвращает True, если найден конфликт (все литералы дизъюнкта ложны).
         """
-        raise NotImplementedError()
+        #if self.sigkill.is_set():
+        #    return False
+
+        while self.propagated < len(self.trail):
+            self.propagated += 1
+
+            for clause in self.clauses:
+                satisfied = False
+                unassigned = None
+                unassigned_count = 0
+
+                for lit in clause:
+                    if self.values[lit] == 1:
+                        satisfied = True
+                        break
+
+                    if self.values[lit] == 0:
+                        unassigned = lit
+                        unassigned_count += 1
+
+                if satisfied:
+                    continue
+
+                if unassigned_count == 0:
+                    return True
+
+                if unassigned_count == 1:
+                    self.assign(unassigned)
+
+        return False
+
+    def eliminate_pure_literals(self):
+        #if self.sigkill.is_set():
+        #    return None
+
+        for v in range(1, self.num_vars + 1):
+            pos = 2 * v
+
+            if self.values[pos] != 0:
+                continue
+
+            if self.occurrences[pos] and not self.occurrences[neg(pos)]:
+                return pos
+
+            if self.occurrences[neg(pos)] and not self.occurrences[pos]:
+                return neg(pos)
+
+        return None
+
+    def most_freq(self):
+        #if self.sigkill.is_set():
+        #    return None
+    
+        best_lit = None
+        best_score = -1
+
+        for v in range(1, self.num_vars + 1):
+            pos = 2 * v
+
+            if self.values[pos] != 0:
+                continue
+
+            pos_score = len(self.occurrences[pos])
+            neg_score = len(self.occurrences[neg(pos)])
+
+            if pos_score >= neg_score:
+                lit = pos
+                score = pos_score
+            else:
+                lit = neg(pos)
+                score = neg_score
+
+            if score > best_score:
+                best_score = score
+                best_lit = lit
+
+        return best_lit
 
     def choose_literal(self):
         """
         ChooseLiteral: литерал для следующего решения или None, если все
         переменные означены.
         """
-        raise NotImplementedError()
+        lit = self.eliminate_pure_literals()
+
+        if lit:
+            return lit
+
+        return self.most_freq()
 
     def solve(self) -> SATSolverResult:
         if self.sigkill.is_set():  # TODO: your code should check this predicate frequently! If it is set, you should return
             return SATSolverResult.UNKNOWN
-        raise NotImplementedError()
+
+        if self.has_empty_clause:
+            return SATSolverResult.UNSAT
+
+        self.build_occurrences()
+
+        for lit in self.units:
+            if self.values[lit] == -1:
+                return SATSolverResult.UNSAT
+
+            if self.values[lit] == 0:
+                self.assign(lit)
+
+        while True:
+            if self.sigkill.is_set():
+                return SATSolverResult.UNKNOWN
+
+            if self.propagate():
+                level = self.level()
+
+                if level == 0:
+                    return SATSolverResult.UNSAT
+
+                decision_lit = self.decision(level)
+
+                self.backtrack(level - 1)
+                #self.assign(neg(decision_lit ^ 1))
+                self.assign(neg(decision_lit))
+
+                continue
+
+            lit = self.choose_literal()
+
+            if lit is None:
+                self.save_model()
+                return SATSolverResult.SAT
+
+            self.decide(lit)
 
 
 if __name__ == "__main__":
